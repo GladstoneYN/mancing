@@ -48,21 +48,23 @@ import {
 
 // ─── Configuration ───────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
-const cleanClientUrl = CLIENT_URL.replace(/\/$/, '');
-const allowedOrigins = [cleanClientUrl, `${cleanClientUrl}/`];
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// Dynamic CORS configuration reflecting the request origin
+const corsOptions = {
+  origin: (origin, callback) => {
+    callback(null, true);
+  },
+  credentials: true,
+};
+
 // ─── Express App ─────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 
 // ─── REST Routes ─────────────────────────────────────────────────────
 
@@ -101,11 +103,7 @@ app.post('/api/verify', (req, res) => {
 // ─── HTTP + Socket.io Server ─────────────────────────────────────────
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: corsOptions,
   pingInterval: 25000,
   pingTimeout: 60000,
 });
@@ -782,7 +780,7 @@ function handleEquip(socket, data, gameRoom) {
 // ─── Start Server ────────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
   log(`🎣 Cozy Fishing Server running on port ${PORT}`);
-  log(`   CORS origin: ${CLIENT_URL}`);
+  log(`   CORS origin: Dynamic (origin reflection)`);
   log(`   WebSocket path: /socket.io`);
 });
 

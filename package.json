@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "description": "A cozy multiplayer browser fishing game",
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev": "concurrently -n client,server -c \"#76d7c4,#f0c674\" \"cd client && npm run dev\" \"cd server && npm run dev\"",
     "install:all": "cd client && npm install && cd ../server && npm install",

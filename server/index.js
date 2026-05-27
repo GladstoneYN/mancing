@@ -49,6 +49,8 @@ import {
 // ─── Configuration ───────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const cleanClientUrl = CLIENT_URL.replace(/\/$/, '');
+const allowedOrigins = [cleanClientUrl, `${cleanClientUrl}/`];
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -58,7 +60,7 @@ function log(msg) {
 const app = express();
 app.use(express.json());
 app.use(cors({
-  origin: CLIENT_URL,
+  origin: allowedOrigins,
   credentials: true,
 }));
 
@@ -100,7 +102,7 @@ app.post('/api/verify', (req, res) => {
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: CLIENT_URL,
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },

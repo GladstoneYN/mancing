@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Build outputs
+client/dist/
+
+# SQLite databases
+server/data/fishing.db
+server/data/fishing.db-journal
+server/data/fishing.db-wal
+server/data/fishing.db-shm
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -9,15 +9,39 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Ensure the data directory exists
-const dataDir = join(__dirname, '..', 'data');
-mkdirSync(dataDir, { recursive: true });
+let db;
+let dbPath;
 
-const dbPath = join(dataDir, 'fishing.db');
-const db = new Database(dbPath);
+try {
+  const dataDir = join(__dirname, '..', 'data');
+  mkdirSync(dataDir, { recursive: true });
+  dbPath = join(dataDir, 'fishing.db');
+  db = new Database(dbPath);
+  console.log(`[${new Date().toISOString()}] Database initialized successfully at ${dbPath}`);
+} catch (err) {
+  console.error(`[${new Date().toISOString()}] Failed to initialize database at default path, trying fallback to /tmp/fishing.db:`, err.message);
+  try {
+    const fallbackDir = '/tmp/fishing-game-data';
+    mkdirSync(fallbackDir, { recursive: true });
+    dbPath = join(fallbackDir, 'fishing.db');
+    db = new Database(dbPath);
+    console.log(`[${new Date().toISOString()}] Fallback database initialized successfully at ${dbPath}`);
+  } catch (err2) {
+    console.error(`[${new Date().toISOString()}] Failed to initialize fallback database at /tmp/fishing.db, using in-memory database:`, err2.message);
+    dbPath = ':memory:';
+    db = new Database(dbPath);
+    console.log(`[${new Date().toISOString()}] In-memory database initialized successfully.`);
+  }
+}
 
-// Enable WAL mode for better concurrent read performance
-db.pragma('journal_mode = WAL');
+// Enable WAL mode for better concurrent read performance (if not in-memory)
+if (dbPath !== ':memory:') {
+  try {
+    db.pragma('journal_mode = WAL');
+  } catch (e) {
+    console.warn(`[${new Date().toISOString()}] Failed to enable WAL mode:`, e.message);
+  }
+}
 db.pragma('foreign_keys = ON');
 
 // ─── Initialize schema ──────────────────────────────────────────────
@@ -34,7 +58,7 @@ try {
   // Columns already exist
 }
 
-console.log(`[${new Date().toISOString()}] Database initialized at ${dbPath}`);
+console.log(`[${new Date().toISOString()}] Database schema and migrations verified.`);
 
 // ─── Prepared Statements ─────────────────────────────────────────────
 

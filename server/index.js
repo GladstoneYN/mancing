@@ -778,7 +778,7 @@ function handleEquip(socket, data, gameRoom) {
 }
 
 // ─── Start Server ────────────────────────────────────────────────────
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   log(`🎣 Cozy Fishing Server running on port ${PORT}`);
   log(`   CORS origin: Dynamic (origin reflection)`);
   log(`   WebSocket path: /socket.io`);

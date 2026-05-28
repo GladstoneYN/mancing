@@ -432,36 +432,56 @@ class SoundManager {
   startRainSound() {
     this.currentWeather = 'rainy';
     this._resumeContext();
-    if (!this.initialized || this.muted || !this.noiseBuffer || this.rainSource) return;
+    if (!this.initialized || this.muted || !this.noiseBuffer) return;
     const now = this.ctx.currentTime;
  
-    this.rainSource = this.ctx.createBufferSource();
-    this.rainSource.buffer = this.noiseBuffer;
-    this.rainSource.loop = true;
- 
-    this.rainFilter = this.ctx.createBiquadFilter();
-    this.rainFilter.type = 'highpass';
-    this.rainFilter.frequency.value = 1600;
- 
-    this.rainGain = this.ctx.createGain();
-    this.rainGain.gain.setValueAtTime(0.05, now);
- 
-    this.rainSource.connect(this.rainFilter);
-    this.rainFilter.connect(this.rainGain);
-    this.rainGain.connect(this.masterGain);
- 
-    this.rainSource.start(now);
+    if (!this.rainSource) {
+      this.rainSource = this.ctx.createBufferSource();
+      this.rainSource.buffer = this.noiseBuffer;
+      this.rainSource.loop = true;
+   
+      this.rainFilter = this.ctx.createBiquadFilter();
+      this.rainFilter.type = 'highpass';
+      this.rainFilter.frequency.value = 1600;
+   
+      this.rainGain = this.ctx.createGain();
+      this.rainGain.gain.setValueAtTime(0.0, now);
+   
+      this.rainSource.connect(this.rainFilter);
+      this.rainFilter.connect(this.rainGain);
+      this.rainGain.connect(this.masterGain);
+   
+      this.rainSource.start(now);
+    }
+
+    this.rainGain.gain.cancelScheduledValues(now);
+    this.rainGain.gain.setValueAtTime(this.rainGain.gain.value, now);
+    this.rainGain.gain.linearRampToValueAtTime(0.05, now + 2.0);
   }
  
   stopRainSound() {
     this.currentWeather = 'sunny';
-    if (this.rainSource) {
-      try {
-        this.rainSource.stop();
-      } catch (e) {}
-      this.rainSource = null;
-      this.rainFilter = null;
-      this.rainGain = null;
+    if (this.rainSource && this.rainGain) {
+      const now = this.ctx.currentTime;
+      const currentGain = this.rainGain;
+      const currentSource = this.rainSource;
+
+      currentGain.gain.cancelScheduledValues(now);
+      currentGain.gain.setValueAtTime(currentGain.gain.value, now);
+      currentGain.gain.linearRampToValueAtTime(0.0, now + 2.0);
+
+      setTimeout(() => {
+        if (this.rainSource === currentSource) {
+          try {
+            currentSource.stop();
+          } catch (e) {}
+          if (this.rainSource === currentSource) {
+            this.rainSource = null;
+            this.rainFilter = null;
+            this.rainGain = null;
+          }
+        }
+      }, 2050);
     }
   }
 }

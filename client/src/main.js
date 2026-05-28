@@ -6,6 +6,9 @@ import './styles/index.css';
 import './styles/ui.css';
 import './styles/fishing.css';
 
+import * as THREE from 'three';
+import { getRodById } from '@shared/fishCatalog.js';
+import { WORLD } from './utils/Constants.js';
 import { EVENTS } from '@shared/events.js';
 import { Storage } from './utils/Storage.js';
 import { SERVER_URL } from './utils/Constants.js';
@@ -286,6 +289,9 @@ class Game {
       // Zoom camera on player
       this.camera.setZoomedIn(true, this.player.rotation);
 
+      // Stop fishing immediately to make player relaxed, destroy the rod
+      this.player.stopFishing();
+
       // Make player hold it in their hands
       this.player.showCaughtFish(data.fish);
 
@@ -294,7 +300,6 @@ class Game {
         this.camera.setZoomedIn(false);
         this.player.hideCaughtFish();
         this.isFishing = false;
-        this.player.stopFishing();
       });
 
       this.hud.updateCoins(data.newBalance);
@@ -453,20 +458,66 @@ class Game {
     }
 
     // Fishing / Selling interaction
-    if (this.input.wasPressed('KeyE') && !this.isFishing && !uiCapturing) {
-      const spot = this.findNearbyFishingSpot();
-      if (spot) {
-        this.startFishing(spot);
-      } else if (this.isNearShop()) {
-        if (this.inventory.isOpen()) this.inventory.close();
-        this.shop.toggle();
-        soundManager.playClick();
+    const isBySpot = this.findNearbyFishingSpot() !== null;
+    const isByWater = this.player && this.player.isByWater(this.world);
+    const canFish = (isBySpot || isByWater) && !this.isFishing && !uiCapturing;
+
+    if (canFish && this.input.wasPressed('KeyE')) {
+      this.isChargingCast = true;
+      this.castCharge = 0;
+      this.castChargeDirection = 1;
+      this.player.state = 'charging_cast';
+      this.showPowerBar();
+    } else if (this.input.wasPressed('KeyE') && this.isNearShop() && !this.isFishing && !uiCapturing) {
+      if (this.inventory.isOpen()) this.inventory.close();
+      this.shop.toggle();
+      soundManager.playClick();
+    }
+
+    // Handle charging cast hold
+    if (this.isChargingCast) {
+      if (this.input.isMoving() || uiCapturing) {
+        this.cancelChargingCast();
+      } else {
+        this.castCharge += this.castChargeDirection * dt * 1.6;
+        if (this.castCharge >= 1.0) {
+          this.castCharge = 1.0;
+          this.castChargeDirection = -1;
+        } else if (this.castCharge <= 0.0) {
+          this.castCharge = 0.0;
+          this.castChargeDirection = 1;
+        }
+        this.updatePowerBarUI();
+
+        if (this.input.wasReleased('KeyE') || !this.input.isDown('KeyE')) {
+          this.executeCast();
+        }
       }
     }
 
-    // Player movement (only when not fishing and UI is not capturing)
-    if (!this.isFishing && !uiCapturing) {
-      this.player.update(dt, this.input, this.world, this.camera);
+    // Cancel fishing if player tries to move while waiting for a bite
+    if (this.isFishing && this.player && this.player.state === 'fishing' && this.input.isMoving() && !uiCapturing) {
+      this.isFishing = false;
+      this.player.stopFishing();
+      this.socket.emit(EVENTS.FISH_FAIL, { spotId: null });
+      Notification.show(this.notificationContainer, 'Casting cancelled.', 'info');
+      soundManager.playLost();
+    }
+
+    // Player movement & animation updates (isolate input if UI is capturing, but allow updating during fishing)
+    if (this.player) {
+      if (!uiCapturing) {
+        this.player.update(dt, this.input, this.world, this.camera);
+      } else if (this.isFishing || this.isChargingCast) {
+        const mockInput = {
+          getMovementVector: () => ({ x: 0, z: 0 }),
+          wasPressed: () => false,
+          isDown: () => false,
+          isMoving: () => false,
+          wasReleased: () => false,
+        };
+        this.player.update(dt, mockInput, this.world, this.camera);
+      }
     }
 
     // Remote players
@@ -516,11 +567,115 @@ class Game {
     return null;
   }
 
-  startFishing(spot) {
+  createPowerBarElement() {
+    if (document.getElementById('cast-power-container')) return;
+
+    const container = document.createElement('div');
+    container.id = 'cast-power-container';
+    container.className = 'cast-power-container';
+    container.style.display = 'none';
+
+    const fill = document.createElement('div');
+    fill.id = 'cast-power-fill';
+    fill.className = 'cast-power-fill';
+
+    const label = document.createElement('div');
+    label.className = 'cast-power-label';
+    label.innerText = 'Cast Power';
+
+    container.appendChild(fill);
+    container.appendChild(label);
+    this.uiContainer.appendChild(container);
+  }
+
+  showPowerBar() {
+    this.createPowerBarElement();
+    const container = document.getElementById('cast-power-container');
+    if (container) {
+      container.style.display = 'flex';
+    }
+  }
+
+  updatePowerBarUI() {
+    const fill = document.getElementById('cast-power-fill');
+    if (fill) {
+      fill.style.height = `${this.castCharge * 100}%`;
+      const red = Math.floor(Math.max(0, 255 - this.castCharge * 255));
+      const green = Math.floor(Math.min(255, this.castCharge * 255));
+      fill.style.boxShadow = `0 0 16px rgba(${red}, ${green}, 100, 0.8)`;
+    }
+  }
+
+  hidePowerBar() {
+    const container = document.getElementById('cast-power-container');
+    if (container) {
+      container.style.display = 'none';
+    }
+  }
+
+  cancelChargingCast() {
+    this.isChargingCast = false;
+    this.hidePowerBar();
+    if (this.player && this.player.state === 'charging_cast') {
+      this.player.state = 'idle';
+    }
+  }
+
+  executeCast() {
+    this.isChargingCast = false;
+    this.hidePowerBar();
+    if (this.player) {
+      this.player.state = 'idle';
+    }
+
+    const dx = Math.sin(this.player.rotation);
+    const dz = Math.cos(this.player.rotation);
+
+    const rodId = this.playerData?.equippedRod || 'bamboo_rod';
+    const rodData = getRodById(rodId) || { castDistance: 1.0 };
+    const minDistance = 2.5;
+    const maxDistance = 4.5 + 4.5 * (rodData.castDistance || 1.0);
+    const finalDistance = minDistance + (maxDistance - minDistance) * this.castCharge;
+
+    let castPoint = null;
+    for (let i = 1; i <= 20; i++) {
+      const t = i / 20;
+      const checkDist = 1.0 + (finalDistance - 1.0) * t;
+      const cx = this.player.position.x + dx * checkDist;
+      const cz = this.player.position.z + dz * checkDist;
+      if (this.world.isInWater(cx, cz)) {
+        castPoint = new THREE.Vector3(cx, WORLD.WATER_LEVEL, cz);
+      }
+    }
+
+    if (!castPoint) {
+      Notification.show(this.notificationContainer, 'Must face the water to fish! 🌊', 'warning');
+      soundManager.playLost();
+      return;
+    }
+
+    let matchedSpot = null;
+    let nearestDist = 3.0;
+    for (const spot of this.fishingSpots) {
+      const dist = castPoint.distanceTo(spot.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        matchedSpot = spot;
+      }
+    }
+
     this.isFishing = true;
-    this.player.startFishing(spot.position);
-    this.socket.emit(EVENTS.FISH_CAST, { spotId: spot.id });
-    Notification.show(this.notificationContainer, 'Casting line... 🎣', 'info');
+    
+    if (matchedSpot) {
+      this.player.startFishing(matchedSpot.position);
+      this.socket.emit(EVENTS.FISH_CAST, { spotId: matchedSpot.id });
+      Notification.show(this.notificationContainer, `Cast landed perfectly in ${matchedSpot.name}! 🎯`, 'success');
+    } else {
+      this.player.startFishing(castPoint);
+      this.socket.emit(EVENTS.FISH_CAST, { spotId: null });
+      Notification.show(this.notificationContainer, 'Casting line... 🎣', 'info');
+    }
+
     soundManager.playCast();
     setTimeout(() => {
       if (this.isFishing) {
@@ -540,7 +695,9 @@ class Game {
   // ─── Interaction Prompt ──────────────────────────────
   updateInteractPrompt() {
     const spot = this.findNearbyFishingSpot();
-    if (spot && !this.isFishing) {
+    const canFreeFish = !spot && this.player && this.player.isByWater(this.world);
+    
+    if (spot && !this.isFishing && !this.isChargingCast) {
       if (this.interactPromptEl && this.interactPromptType !== 'fish') {
         this.interactPromptEl.remove();
         this.interactPromptEl = null;
@@ -548,11 +705,23 @@ class Game {
       if (!this.interactPromptEl) {
         this.interactPromptEl = document.createElement('div');
         this.interactPromptEl.className = 'interact-prompt glass';
-        this.interactPromptEl.innerHTML = 'Press <kbd>E</kbd> to fish at <strong>' + spot.name + '</strong>';
+        this.interactPromptEl.innerHTML = 'Hold <kbd>E</kbd> to fish at <strong>' + spot.name + '</strong>';
         this.uiContainer.appendChild(this.interactPromptEl);
         this.interactPromptType = 'fish';
       }
-    } else if (this.isNearShop() && !this.isFishing && !this.inventory.isOpen() && !this.shop.isOpen()) {
+    } else if (canFreeFish && !this.isFishing && !this.isChargingCast) {
+      if (this.interactPromptEl && this.interactPromptType !== 'free_fish') {
+        this.interactPromptEl.remove();
+        this.interactPromptEl = null;
+      }
+      if (!this.interactPromptEl) {
+        this.interactPromptEl = document.createElement('div');
+        this.interactPromptEl.className = 'interact-prompt glass';
+        this.interactPromptEl.innerHTML = 'Hold <kbd>E</kbd> to <strong>Cast Line</strong>';
+        this.uiContainer.appendChild(this.interactPromptEl);
+        this.interactPromptType = 'free_fish';
+      }
+    } else if (this.isNearShop() && !this.isFishing && !this.isChargingCast && !this.inventory.isOpen() && !this.shop.isOpen()) {
       if (this.interactPromptEl && this.interactPromptType !== 'shop') {
         this.interactPromptEl.remove();
         this.interactPromptEl = null;

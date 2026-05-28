@@ -238,17 +238,16 @@ class AvatarPreview {
     this._head.position.y = 0.95;
     this.characterGroup.add(this._head);
 
-    const earGeo = new THREE.SphereGeometry(0.05, 6, 6);
-    earGeo.scale(1.2, 1.2, 0.8);
+    // Ears (Cat Ears Geometry)
+    const earGeo = new THREE.ConeGeometry(0.09, 0.18, 4);
+    earGeo.rotateY(Math.PI * 0.25); // Rotate so flat face is front/outward
+    earGeo.scale(1, 1, 0.7); // Flatten slightly along Z
+    earGeo.translate(0, 0.09, 0); // Center pivot at base
     
     this._leftEar = new THREE.Mesh(earGeo, bodyMat);
-    this._leftEar.position.set(-0.28, 0.95, -0.02);
-    this._leftEar.rotation.set(0, 0.2, 0);
     this.characterGroup.add(this._leftEar);
 
     this._rightEar = new THREE.Mesh(earGeo, bodyMat);
-    this._rightEar.position.set(0.28, 0.95, -0.02);
-    this._rightEar.rotation.set(0, -0.2, 0);
     this.characterGroup.add(this._rightEar);
     
     // Eyes
@@ -298,7 +297,10 @@ class AvatarPreview {
   
   _buildHat(appearance) {
     const hatId = appearance.hat;
-    if (!hatId || hatId === 'none') return;
+    if (!hatId || hatId === 'none') {
+      this._updateEars(appearance);
+      return;
+    }
     
     const hatMat = new THREE.MeshStandardMaterial({ roughness: 0.7 });
     
@@ -384,6 +386,30 @@ class AvatarPreview {
         this._hatMeshes.push(mesh);
         break;
       }
+    }
+    this._updateEars(appearance);
+  }
+
+  _updateEars(appearance) {
+    if (!this._leftEar || !this._rightEar) return;
+
+    const hatId = appearance.hat;
+    const hasHat = hatId && hatId !== 'none';
+
+    if (hasHat) {
+      // Ears pushed down to the sides under the hat
+      this._leftEar.position.set(-0.24, 1.01, -0.02);
+      this._leftEar.rotation.set(0.1, 0.15, Math.PI * 0.53); // tilted down to sides (like 95 degrees)
+
+      this._rightEar.position.set(0.24, 1.01, -0.02);
+      this._rightEar.rotation.set(0.1, -0.15, -Math.PI * 0.53);
+    } else {
+      // Ears perked up at ~50 degrees (40 degrees from vertical = ~0.22 * PI)
+      this._leftEar.position.set(-0.15, 1.16, -0.02);
+      this._leftEar.rotation.set(0.15, 0.25, Math.PI * 0.22); // perked up 50 deg from horiz
+
+      this._rightEar.position.set(0.15, 1.16, -0.02);
+      this._rightEar.rotation.set(0.15, -0.25, -Math.PI * 0.22);
     }
   }
   
